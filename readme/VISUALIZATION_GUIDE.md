@@ -56,8 +56,9 @@ pip install -r requirements.txt
 ### 基础可视化示例
 
 ```python
-from lib.helpers.visualization_utils import DetectionVisualizer
+from tools.visualization import DetectionVisualizer, load_kitti_calib
 import cv2
+import numpy as np
 
 # 初始化可视化器
 visualizer = DetectionVisualizer()
@@ -65,23 +66,25 @@ visualizer = DetectionVisualizer()
 # 加载图像
 image = cv2.imread('path/to/image.png')
 
-# 准备检测结果 (示例格式)
-detections = {
-    'bbox': [[100, 100, 200, 200]],  # 2D边界框 [x1, y1, x2, y2]
-    'dimensions': [[1.5, 1.8, 4.0]],  # 3D尺寸 [h, w, l]
-    'location': [[0, 1.5, 10]],       # 3D位置 [x, y, z]
-    'rotation_y': [0.5],               # 旋转角度
-    'score': [0.95],                   # 置信度
-    'class': ['Car']                   # 类别
+# 加载KITTI标定文件
+calib = load_kitti_calib('path/to/calib.txt')
+P2 = calib['P2']  # 3x4 投影矩阵
+
+# 准备单个检测结果
+detection = {
+    'class': 'Car',                    # 类别名称
+    'dimensions': [1.5, 1.8, 4.0],     # 3D尺寸 [h, w, l]
+    'location': [2.0, 1.5, 10.0],      # 3D位置 [x, y, z]
+    'rotation_y': 0.5,                 # 旋转角度
+    'score': 0.95                      # 置信度
 }
 
-# 相机标定矩阵
-calibration = {
-    'P2': [[...]]  # 3x4 投影矩阵
-}
+# 可视化单个检测
+result_image = visualizer.draw_3d_bbox(image, detection, P2)
 
-# 可视化
-result_image = visualizer.draw_3d_box(image, detections, calibration)
+# 或者可视化多个检测
+detections = [detection]  # 检测列表
+result_image = visualizer.visualize_detections(image, detections, P2)
 
 # 保存结果
 cv2.imwrite('output.png', result_image)
@@ -90,18 +93,26 @@ cv2.imwrite('output.png', result_image)
 ### 生成GIF动画
 
 ```python
-from lib.helpers.visualization_utils import FrameToGifConverter
+from tools.gif_generator import FrameToGifConverter
+from pathlib import Path
 
 # 初始化转换器
 converter = FrameToGifConverter(
-    input_dir='visualization/frames',
+    frame_dir='visualization/frames',
     output_path='visualization/demo.gif',
     fps=10
 )
 
 # 生成GIF
-converter.convert()
-print(f"GIF已生成: {converter.output_path}")
+gif_path = converter.create_gif(duration=100)
+print(f"GIF已生成: {gif_path}")
+
+# 也可以生成MP4视频
+video_path = converter.create_video(
+    output_video='visualization/demo.mp4',
+    fps=10
+)
+print(f"视频已生成: {video_path}")
 ```
 
 ## 详细使用
@@ -113,50 +124,61 @@ print(f"GIF已生成: {converter.output_path}")
 #### 初始化参数
 
 ```python
+from tools.visualization import DetectionVisualizer
+
 visualizer = DetectionVisualizer(
-    class_names=['Car', 'Pedestrian', 'Cyclist'],  # 类别名称列表
-    score_threshold=0.3,                            # 置信度阈值
-    line_thickness=2,                               # 线条粗细
-    font_scale=0.5                                  # 字体大小
+    class_names=['Car', 'Pedestrian', 'Cyclist']  # 类别名称列表
 )
 ```
 
 #### 主要方法
 
-**1. draw_3d_box()**
+**1. draw_3d_bbox()**
 
-在图像上绘制3D边界框。
-
-```python
-result_image = visualizer.draw_3d_box(
-    image=img,              # 输入图像 (numpy array)
-    detections=det_results, # 检测结果字典
-    calibration=calib,      # 相机标定参数
-    show_score=True,        # 是否显示置信度
-    show_distance=True      # 是否显示距离
-)
-```
-
-**2. draw_2d_box()**
-
-仅绘制2D边界框（用于对比）。
+在图像上绘制单个3D边界框。
 
 ```python
-result_image = visualizer.draw_2d_box(
+from tools.visualization import DetectionVisualizer, load_kitti_calib
+import cv2
+
+visualizer = DetectionVisualizer()
+
+# 加载标定
+calib = load_kitti_calib('path/to/calib.txt')
+P2 = calib['P2']
+
+# 单个检测
+detection = {
+    'class': 'Car',
+    'dimensions': [1.5, 1.8, 4.0],  # h, w, l
+    'location': [2.0, 1.5, 10.0],   # x, y, z
+    'rotation_y': 0.5,
+    'score': 0.95
+}
+
+result_image = visualizer.draw_3d_bbox(
     image=img,
-    detections=det_results,
-    show_labels=True
+    detection=detection,
+    P2=P2,
+    thickness=2,
+    show_info=True
 )
 ```
 
-**3. project_3d_to_2d()**
+**2. visualize_detections()**
 
-将3D坐标投影到2D图像平面。
+在图像上绘制多个3D边界框。
 
 ```python
-corners_2d = visualizer.project_3d_to_2d(
-    corners_3d=corners,  # 3D角点坐标
-    P2=calib_matrix      # 投影矩阵
+# 多个检测
+detections = [detection1, detection2, detection3]
+
+result_image = visualizer.visualize_detections(
+    image=img,
+    detections=detections,
+    P2=P2,
+    thickness=2,
+    show_info=True
 )
 ```
 
@@ -167,31 +189,34 @@ corners_2d = visualizer.project_3d_to_2d(
 #### 初始化参数
 
 ```python
+from tools.gif_generator import FrameToGifConverter
+
 converter = FrameToGifConverter(
-    input_dir='frames/',        # 输入图像目录
-    output_path='output.gif',   # 输出GIF路径
-    fps=10,                     # 帧率
-    loop=0,                     # 循环次数 (0表示无限循环)
-    optimize=True               # 是否优化GIF大小
+    frame_dir='frames/',           # 输入图像目录
+    output_path='output.gif',      # 输出GIF路径
+    fps=10                         # 帧率
 )
 ```
 
 #### 方法
 
-**convert()**
+**create_gif()**
 
-执行转换操作。
+创建GIF动画。
 
 ```python
-converter.convert()
+gif_path = converter.create_gif(duration=100)
 ```
 
-**get_frame_count()**
+**create_video()**
 
-获取帧数。
+创建MP4视频。
 
 ```python
-num_frames = converter.get_frame_count()
+video_path = converter.create_video(
+    output_video='output.mp4',
+    fps=10
+)
 ```
 
 ### InferencePipeline 类
@@ -201,21 +226,24 @@ num_frames = converter.get_frame_count()
 #### 示例用法
 
 ```python
-from lib.helpers.visualization_utils import InferencePipeline
+from tools.inference_pipeline import InferencePipeline
 
 pipeline = InferencePipeline(
-    model=trained_model,
-    data_loader=test_loader,
+    model=None,  # 可选，传入训练好的模型
     output_dir='results/',
-    device='cuda'
+    device='cuda',
+    class_names=['Car', 'Pedestrian', 'Cyclist']
 )
 
 # 运行推理和可视化
-pipeline.run(
-    visualize=True,
-    save_predictions=True,
-    generate_gif=True
+output_path = pipeline.inference_and_visualize(
+    image_dir='data/kitti/image_2',
+    calib_dir='data/kitti/calib',
+    save_gif=True,
+    show_progress=True
 )
+
+print(f"Results saved to: {output_path}")
 ```
 
 ## API 文档
@@ -235,10 +263,11 @@ pipeline.run(
 
 | 方法 | 参数 | 返回值 | 说明 |
 |------|------|--------|------|
-| `draw_3d_box()` | image, detections, calibration | numpy.ndarray | 绘制3D边界框 |
-| `draw_2d_box()` | image, detections | numpy.ndarray | 绘制2D边界框 |
+| `draw_3d_bbox()` | image, detection, P2 | numpy.ndarray | 绘制单个3D边界框 |
+| `visualize_detections()` | image, detections, P2 | numpy.ndarray | 绘制多个3D边界框 |
 | `compute_box_3d()` | dimensions, location, rotation_y | numpy.ndarray | 计算3D框角点 |
-| `project_3d_to_2d()` | corners_3d, P2 | numpy.ndarray | 3D到2D投影 |
+| `project_3d_to_2d()` | corners_3d, P2 | tuple | 3D到2D投影 |
+| `save_frame()` | image, detections, P2, output_path | bool | 保存可视化结果 |
 
 ### FrameToGifConverter
 
@@ -246,9 +275,8 @@ pipeline.run(
 
 | 方法 | 参数 | 返回值 | 说明 |
 |------|------|--------|------|
-| `convert()` | - | None | 执行帧到GIF转换 |
-| `get_frame_count()` | - | int | 获取帧数量 |
-| `set_fps()` | fps | None | 设置帧率 |
+| `create_gif()` | duration | str | 创建GIF动画 |
+| `create_video()` | output_video, fps | None | 创建MP4视频 |
 
 ## 完整示例
 
@@ -257,121 +285,159 @@ pipeline.run(
 ```python
 import os
 import cv2
-from lib.helpers.visualization_utils import DetectionVisualizer
-from lib.datasets.kitti import KITTI
+import numpy as np
+from pathlib import Path
+from tools.visualization import DetectionVisualizer, load_kitti_calib
 
 # 1. 设置路径
-data_dir = 'data/KITTI/object'
-output_dir = 'visualization/kitti_results'
-os.makedirs(output_dir, exist_ok=True)
+data_dir = Path('data/KITTI/object/training')
+image_dir = data_dir / 'image_2'
+calib_dir = data_dir / 'calib'
+output_dir = Path('visualization/kitti_results')
+output_dir.mkdir(parents=True, exist_ok=True)
 
-# 2. 初始化数据集
-dataset = KITTI(
-    root_dir=data_dir,
-    split='val'
-)
-
-# 3. 初始化可视化器
+# 2. 初始化可视化器
 visualizer = DetectionVisualizer(
-    class_names=['Car', 'Pedestrian', 'Cyclist'],
-    score_threshold=0.5,
-    line_thickness=3
+    class_names=['Car', 'Pedestrian', 'Cyclist']
 )
 
-# 4. 批量可视化
-for idx in range(len(dataset)):
-    # 获取数据
-    image, calibration, _ = dataset[idx]
+# 3. 批量可视化
+image_files = sorted(image_dir.glob('*.png'))
+
+for img_path in image_files:
+    # 获取图像ID
+    image_id = img_path.stem
     
-    # 运行检测 (这里需要您的模型)
+    # 加载图像
+    image = cv2.imread(str(img_path))
+    
+    # 加载标定
+    calib_path = calib_dir / f"{image_id}.txt"
+    calib = load_kitti_calib(str(calib_path))
+    P2 = calib['P2']
+    
+    # 运行检测 (需要您的模型)
     # detections = model.predict(image)
     
+    # 示例检测 (演示用)
+    detections = [
+        {
+            'class': 'Car',
+            'dimensions': [1.5, 1.8, 4.0],
+            'location': [2.0, 1.5, 10.0],
+            'rotation_y': 0.5,
+            'score': 0.95
+        }
+    ]
+    
     # 可视化
-    result = visualizer.draw_3d_box(
-        image=image,
-        detections=detections,
-        calibration=calibration
-    )
+    result = visualizer.visualize_detections(image, detections, P2)
     
     # 保存
-    output_path = os.path.join(output_dir, f'{idx:06d}.png')
-    cv2.imwrite(output_path, result)
+    output_path = output_dir / f'{image_id}.png'
+    cv2.imwrite(str(output_path), result)
     
-    print(f'Processed {idx+1}/{len(dataset)}')
+    print(f'Processed {image_id}')
+
+print(f"All results saved to {output_dir}")
 ```
 
 ### 示例2：创建检测结果GIF
 
 ```python
-from lib.helpers.visualization_utils import (
-    DetectionVisualizer,
-    FrameToGifConverter
-)
+import os
+import cv2
+from pathlib import Path
+from tools.visualization import DetectionVisualizer, load_kitti_calib
+from tools.gif_generator import FrameToGifConverter
 
 # 1. 批量生成可视化图像
 visualizer = DetectionVisualizer()
-frame_dir = 'temp_frames/'
-os.makedirs(frame_dir, exist_ok=True)
+frame_dir = Path('temp_frames/')
+frame_dir.mkdir(parents=True, exist_ok=True)
 
-for i, (img, det) in enumerate(detection_results):
-    vis_img = visualizer.draw_3d_box(img, det, calib)
-    cv2.imwrite(f'{frame_dir}/{i:04d}.png', vis_img)
+# 假设有一系列检测结果
+image_dir = Path('data/kitti/image_2')
+calib_dir = Path('data/kitti/calib')
+
+image_files = sorted(image_dir.glob('*.png'))[:20]  # 处理前20张
+
+for i, img_path in enumerate(image_files):
+    # 加载图像和标定
+    image = cv2.imread(str(img_path))
+    calib_path = calib_dir / f"{img_path.stem}.txt"
+    calib = load_kitti_calib(str(calib_path))
+    P2 = calib['P2']
+    
+    # 示例检测
+    detections = [
+        {
+            'class': 'Car',
+            'dimensions': [1.5, 1.8, 4.0],
+            'location': [2.0, 1.5, 10.0 + i * 2],  # 车辆逐渐远离
+            'rotation_y': 0.5,
+            'score': 0.95
+        }
+    ]
+    
+    # 可视化
+    vis_img = visualizer.visualize_detections(image, detections, P2)
+    
+    # 保存帧
+    cv2.imwrite(str(frame_dir / f'frame_{i:04d}.png'), vis_img)
 
 # 2. 转换为GIF
 converter = FrameToGifConverter(
-    input_dir=frame_dir,
+    frame_dir=frame_dir,
     output_path='detection_demo.gif',
-    fps=15,
-    optimize=True
+    fps=5
 )
-converter.convert()
+converter.create_gif(duration=200)
 
-# 3. 清理临时文件
+# 3. 也可以创建视频
+converter.create_video(output_video='detection_demo.mp4', fps=5)
+
+print("GIF and video created!")
+
+# 4. 清理临时文件（可选）
 import shutil
-shutil.rmtree(frame_dir)
+# shutil.rmtree(frame_dir)
 ```
 
-### 示例3：实时可视化
+### 示例3：完整推理流程
 
 ```python
 import torch
-from lib.helpers.visualization_utils import DetectionVisualizer
+from pathlib import Path
+from tools.inference_pipeline import InferencePipeline
+from tools.visualization import DetectionVisualizer
 
-# 加载模型
-model = torch.load('checkpoints/best_model.pth')
-model.eval()
+# 1. 设置路径
+data_dir = Path('data/kitti/testing')
+image_dir = data_dir / 'image_2'
+calib_dir = data_dir / 'calib'
+output_dir = Path('results')
 
-# 初始化可视化器
-visualizer = DetectionVisualizer(score_threshold=0.3)
+# 2. 创建推理流程（不使用模型，仅演示）
+pipeline = InferencePipeline(
+    model=None,  # 如果有模型: model = torch.load('model.pth')
+    output_dir=output_dir,
+    device='cuda',
+    class_names=['Car', 'Pedestrian', 'Cyclist']
+)
 
-# 视频处理
-cap = cv2.VideoCapture('input_video.mp4')
-fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-out = cv2.VideoWriter('output_video.mp4', fourcc, 30.0, (1920, 1080))
+# 3. 运行批量推理和可视化
+result_path = pipeline.inference_and_visualize(
+    image_dir=image_dir,
+    calib_dir=calib_dir,
+    save_gif=True,
+    show_progress=True
+)
 
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        break
-    
-    # 推理
-    with torch.no_grad():
-        detections = model(frame)
-    
-    # 可视化
-    vis_frame = visualizer.draw_3d_box(frame, detections, calibration)
-    
-    # 写入输出
-    out.write(vis_frame)
-    
-    # 显示
-    cv2.imshow('Detection', vis_frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
-cap.release()
-out.release()
-cv2.destroyAllWindows()
+print(f"Results saved to: {result_path}")
+print(f"  - Frames: {result_path / 'frames'}")
+print(f"  - GIF: {result_path / 'inference_results.gif'}")
+print(f"  - Video: {result_path / 'inference_results.mp4'}")
 ```
 
 ## 常见问题
@@ -381,35 +447,33 @@ cv2.destroyAllWindows()
 **A:** 对于KITTI数据集，标定文件位于 `data/KITTI/object/training/calib/` 目录。读取方法：
 
 ```python
-def read_calib_file(filepath):
-    """读取KITTI标定文件"""
-    data = {}
-    with open(filepath, 'r') as f:
-        for line in f.readlines():
-            key, value = line.split(':', 1)
-            data[key] = np.array([float(x) for x in value.split()])
-    
-    # P2是左侧彩色相机的投影矩阵
-    P2 = data['P2'].reshape(3, 4)
-    return {'P2': P2}
+from tools.visualization import load_kitti_calib
 
-# 使用
-calib = read_calib_file('data/KITTI/object/training/calib/000000.txt')
+# 加载KITTI标定文件
+calib = load_kitti_calib('data/KITTI/object/training/calib/000000.txt')
+
+# 获取P2投影矩阵 (3x4)
+P2 = calib['P2']
+
+print(f"P2 shape: {P2.shape}")  # (3, 4)
+print(f"P2:\n{P2}")
 ```
 
 ### Q2: 检测结果格式是什么？
 
-**A:** 标准检测结果字典格式：
+**A:** 标准检测结果字典格式（单个检测）：
 
 ```python
-detections = {
-    'bbox': np.array([[x1, y1, x2, y2], ...]),      # 2D框 (N, 4)
-    'dimensions': np.array([[h, w, l], ...]),        # 3D尺寸 (N, 3)
-    'location': np.array([[x, y, z], ...]),          # 3D位置 (N, 3)
-    'rotation_y': np.array([ry, ...]),               # 旋转角 (N,)
-    'score': np.array([conf, ...]),                  # 置信度 (N,)
-    'class': ['Car', 'Pedestrian', ...]              # 类别 (N,)
+detection = {
+    'class': 'Car',                    # 类别名称 (字符串)
+    'dimensions': [1.5, 1.8, 4.0],     # 3D尺寸 [h, w, l] (米)
+    'location': [2.0, 1.5, 10.0],      # 3D位置 [x, y, z] (相机坐标系)
+    'rotation_y': 0.5,                 # 旋转角 (弧度, -π到π)
+    'score': 0.95                      # 置信度 (可选)
 }
+
+# 多个检测使用列表
+detections = [detection1, detection2, detection3]
 ```
 
 ### Q3: 为什么3D框显示不正确？
@@ -426,17 +490,18 @@ detections = {
 **A:** 自定义颜色和样式：
 
 ```python
-class CustomVisualizer(DetectionVisualizer):
-    def __init__(self):
-        super().__init__()
-        self.colors = {
-            'Car': (0, 255, 0),        # 绿色
-            'Pedestrian': (255, 0, 0),  # 蓝色
-            'Cyclist': (0, 0, 255)      # 红色
-        }
-    
-    def get_color(self, class_name):
-        return self.colors.get(class_name, (255, 255, 255))
+from tools.visualization import DetectionVisualizer
+
+# 使用默认颜色
+visualizer = DetectionVisualizer()
+
+# DetectionVisualizer.CLASS_COLORS 定义了默认颜色
+# 可以在绘制时调整线条粗细
+result = visualizer.draw_3d_bbox(
+    image, detection, P2,
+    thickness=3,      # 线条粗细
+    show_info=True    # 显示标签信息
+)
 ```
 
 ### Q5: GIF文件太大怎么办？
@@ -444,16 +509,19 @@ class CustomVisualizer(DetectionVisualizer):
 **A:** 优化建议：
 
 ```python
+from tools.gif_generator import FrameToGifConverter
+
 converter = FrameToGifConverter(
-    input_dir='frames/',
+    frame_dir='frames/',
     output_path='output.gif',
-    fps=10,              # 降低帧率
-    optimize=True,       # 启用优化
-    quality=80           # 降低质量 (1-100)
+    fps=5              # 降低帧率减小文件大小
 )
 
-# 或者减少帧数
-converter.convert(step=2)  # 每隔一帧取一帧
+# 创建GIF时使用较大的duration值
+converter.create_gif(duration=200)  # 每帧持续200ms
+
+# 或者只处理部分帧（在生成帧时跳过）
+# 例如，每隔2帧保存一次
 ```
 
 ## 性能优化建议
