@@ -17,7 +17,14 @@ from tools.visualization import (
 )
 
 from tools.gif_generator import FrameToGifConverter
-from tools.inference_pipeline import InferencePipeline
+
+# InferencePipeline requires torch, so import it optionally
+try:
+    from tools.inference_pipeline import InferencePipeline
+    _has_inference_pipeline = True
+except ImportError:
+    _has_inference_pipeline = False
+    InferencePipeline = None
 
 # Show deprecation warning
 warnings.warn(
@@ -30,6 +37,8 @@ warnings.warn(
 __all__ = [
     'DetectionVisualizer',
     'FrameToGifConverter', 
-    'InferencePipeline',
     'load_kitti_calib'
 ]
+
+if _has_inference_pipeline:
+    __all__.append('InferencePipeline')

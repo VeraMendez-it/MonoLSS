@@ -15,13 +15,27 @@ import argparse
 import json
 from pathlib import Path
 from typing import Optional, Dict, List
-import torch
 import time
 from datetime import datetime
 
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Import dependencies (torch is optional)
+try:
+    import torch
+    _has_torch = True
+except ImportError:
+    _has_torch = False
+
 from tools.visualization import DetectionVisualizer
 from tools.metrics_calculator import MetricsCalculator
-from tools.inference_pipeline import InferencePipeline
+try:
+    from tools.inference_pipeline import InferencePipeline
+    _has_inference = True
+except ImportError:
+    _has_inference = False
+    InferencePipeline = None
 
 
 def run_full_evaluation(model_path: Optional[str] = None,

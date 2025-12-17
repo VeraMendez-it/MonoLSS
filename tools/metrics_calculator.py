@@ -17,8 +17,20 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Union
 from collections import defaultdict
 
-# Import from existing eval.py
-from tools import eval as kitti_eval
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Import from existing eval.py (may require CUDA)
+try:
+    # Disable CUDA initialization errors by setting environment variable
+    os.environ.setdefault('NUMBA_DISABLE_CUDA', '1')
+    from tools import eval as kitti_eval
+    _has_kitti_eval = True
+except Exception as e:
+    print(f"Warning: Could not import eval.py: {e}")
+    print("Some functionality may be limited.")
+    _has_kitti_eval = False
+    kitti_eval = None
 
 
 class MetricsCalculator:
@@ -156,6 +168,13 @@ class MetricsCalculator:
                 - '3d': 3D bounding box AP
                 - 'aos': Average orientation similarity (if available)
         """
+        if not _has_kitti_eval:
+            raise RuntimeError(
+                "KITTI evaluation module not available. "
+                "This may be due to missing CUDA support or dependencies. "
+                "Please ensure numba and CUDA are properly installed."
+            )
+        
         print("Loading annotations...")
         gt_annos = self.load_annotations(self.gt_dir)
         dt_annos = self.load_annotations(self.pred_dir)
@@ -195,6 +214,10 @@ class MetricsCalculator:
         Returns:
             3D IoU value
         """
+        if not _has_kitti_eval:
+            print("Warning: KITTI eval not available, returning 0.0")
+            return 0.0
+        
         # Use GPU-accelerated calculation from eval.py
         boxes = np.array([box1]).reshape(1, 7)
         qboxes = np.array([box2]).reshape(1, 7)
@@ -217,6 +240,10 @@ class MetricsCalculator:
         Returns:
             BEV IoU value
         """
+        if not _has_kitti_eval:
+            print("Warning: KITTI eval not available, returning 0.0")
+            return 0.0
+        
         # Use GPU-accelerated calculation from eval.py
         boxes = np.array([box1]).reshape(1, 5)
         qboxes = np.array([box2]).reshape(1, 5)
